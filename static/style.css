@@ -1,0 +1,76 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont;
+  background: #0b1220;
+  color: #fff;
+}
+
+/* App container */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh; /* mobil için kritik */
+}
+
+/* Header */
+.header {
+  padding: 12px;
+  text-align: center;
+  font-weight: 600;
+  background: #050b18;
+  border-bottom: 1px solid #1e293b;
+}
+
+/* Chat area */
+.chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* Input bar */
+.input-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  background: #050b18;
+  border-top: 1px solid #1e293b;
+}
+
+/* Input */
+.input-bar input {
+  flex: 1;
+  padding: 14px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: none;
+  outline: none;
+}
+
+/* Send button */
+.input-bar button {
+  padding: 0 18px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: none;
+  background: #22c55e;
+  color: #000;
+  cursor: pointer;
+}
+
+/* Desktop iyileştirme */
+@media (min-width: 768px) {
+  .app {
+    max-width: 900px;
+    margin: 0 auto;
+    border-left: 1px solid #1e293b;
+    border-right: 1px solid #1e293b;
+  }
+}
