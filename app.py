@@ -104,4 +104,4 @@ Question:
         "question": q.question,
         "answer": resp.choices[0].message.content,
         "latency_sec": round(time.time() - start, 2)
-    }
+    } 
