@@ -25,12 +25,11 @@ CHUNKS_PER_TOUR = 3
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ---------------- KEYWORDS ----------------
-KEYWORDS = {
-    "locations": ["gobeklitepe", "cappadocia", "pamukkale"],
-    "transport": ["flight", "transfer", "bus"],
-    "countries": ["turkey", "greece", "egypt"],
-    "pricing": ["price", "usd", "eur", "$"]
+# ---------------- CANONICAL KEYWORD STEMS ----------------
+KEYWORD_STEMS = {
+    "gobek": ["gobek", "göbek", "gobekli", "gobekli tepe", "gobeklitep"],
+    "cappadocia": ["kapadok", "kapadokya", "cappadoc"],
+    "pamukkale": ["pamukkal"],
 }
 
 # ---------------- APP ----------------
@@ -68,55 +67,61 @@ def embed(text: str):
 def to_pgvector(v):
     return "[" + ",".join(str(x) for x in v) + "]"
 
-# ---------------- KEYWORD PARSER ----------------
-def parse_keywords(question: str):
+# ---------------- CANONICAL PARSER ----------------
+def parse_canonical_keywords(question: str):
     q = normalize_text(question)
-    found = []
+    found = set()
 
-    for kws in KEYWORDS.values():
-        for kw in kws:
-            if kw in q:
-                found.append(kw)
+    for canonical, stems in KEYWORD_STEMS.items():
+        for stem in stems:
+            if normalize_text(stem) in q:
+                found.add(canonical)
 
-    return list(set(found))
+    return list(found)
 
-# ---------------- HYBRID DB SEARCH ----------------
-def search_db_hybrid(question: str):
-    keywords = parse_keywords(question)
+# ---------------- HYBRID DB SEARCH (ONLY WHEN KEYWORD EXISTS) ----------------
+def search_db_hybrid(question: str, canonical_keywords: list):
     q_vec = to_pgvector(embed(question))
-
-    print("\n====== HYBRID SEARCH ======")
-    print("Question:", question)
-    print("Keywords:", keywords)
 
     conn = psycopg.connect(**DB_CONN)
     cur = conn.cursor()
 
     where_clauses = ["source_type = 'pdf'"]
     params = []
+    or_blocks = []
 
-    for kw in keywords:
-        where_clauses.append(
-            "translate(lower(content), 'öüçşğı', 'oucs gi') LIKE %s"
-        )
-        params.append(f"%{kw}%")
+    for canonical in canonical_keywords:
+        stems = KEYWORD_STEMS.get(canonical, [])
+        stem_conditions = []
+
+        for stem in stems:
+            stem_conditions.append(
+                "translate(lower(content),'öüçşğı','oucsg') LIKE %s"
+            )
+            params.append(f"%{normalize_text(stem)}%")
+
+        if stem_conditions:
+            or_blocks.append("(" + " OR ".join(stem_conditions) + ")")
+
+    if or_blocks:
+        where_clauses.append("(" + " OR ".join(or_blocks) + ")")
 
     where_sql = " AND ".join(where_clauses)
 
-    sql = f"""
+    cur.execute(
+        f"""
         SELECT DISTINCT source_name
         FROM rag_documents
         WHERE {where_sql}
+        ORDER BY source_name
         LIMIT %s
-    """
+        """,
+        params + [MAX_TOURS]
+    )
 
-    print("[SQL]", sql)
-    print("[PARAMS]", params + [MAX_TOURS])
-
-    cur.execute(sql, params + [MAX_TOURS])
     tours = [r[0] for r in cur.fetchall()]
 
-    print("[DB] Tours found:", len(tours))
+    print("\n🔎 MATCHED TOURS FROM DB:")
     for t in tours:
         print(" -", t)
 
@@ -135,16 +140,11 @@ def search_db_hybrid(question: str):
         )
 
         chunks = cur.fetchall()
-        print(f"[DB] {tour} -> chunks:", len(chunks))
-
         combined = "\n".join(c[0] for c in chunks)
         results.append((tour, combined))
 
     cur.close()
     conn.close()
-
-    print("====== END SEARCH ======\n")
-
     return results
 
 # ---------------- API ----------------
@@ -152,28 +152,26 @@ def search_db_hybrid(question: str):
 def ask(q: Question):
     start = time.time()
 
-    rows = search_db_hybrid(q.question)
+    canonical_keywords = parse_canonical_keywords(q.question)
 
-    context = "\n\n".join(
-        f"Tour: {r[0]}\n{r[1]}"
-        for r in rows
-    )
+    # ✅ SADECE keyword varsa DB tur listesi
+    if canonical_keywords:
+        rows = search_db_hybrid(q.question, canonical_keywords)
+        tour_names = [tour for tour, _ in rows]
 
+        return {
+            "question": q.question,
+            "tours": tour_names,
+            "answer": None,
+            "matched_tours": len(tour_names),
+            "latency_sec": round(time.time() - start, 2)
+        }
+
+    # 🔁 AKSİ HALDE → VECTOR + LLM
     prompt = f"""
 You are Fez-GPT, a travel assistant for FezTravel.
 
-List ALL tours provided in the context.
-Do NOT merge similar tours.
-Do NOT omit any tour.
-
-Use the information below if relevant.
-If incomplete, infer meaning.
-Do not say "not found" unless nothing is related.
-
-
-
-Context:
-{context}
+Answer the question naturally and informatively.
 
 Question:
 {q.question}
@@ -182,13 +180,14 @@ Question:
     resp = client.chat.completions.create(
         model=GPT_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
+        temperature=0.4,
         max_tokens=MAX_TOKENS
     )
 
     return {
         "question": q.question,
+        "tours": [],
         "answer": resp.choices[0].message.content,
-        "matched_tours": len(rows),
+        "matched_tours": 0,
         "latency_sec": round(time.time() - start, 2)
     }
