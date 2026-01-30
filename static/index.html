@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -27,11 +27,11 @@ header{
   padding:20px
 }
 .msg{
-  max-width:85%;
+  max-width:70%;
   padding:12px 16px;
   border-radius:14px;
   margin-bottom:12px;
-  white-space:pre-line;
+  white-space:pre-wrap
 }
 .user{
   background:#2563eb;
@@ -73,68 +73,76 @@ button{
 <div id="chat"></div>
 
 <div id="input">
-  <input id="q" placeholder="Ask about your trip..." />
+  <input id="q" placeholder="Type your message..." />
   <button onclick="send()">Send</button>
 </div>
 
 <script>
+/* ================= SESSION ================= */
+
+// Her sayfa yüklenişinde YENİ session
+const SESSION_ID = crypto.randomUUID();
+
+/* ================= UI HELPERS ================= */
+
 const chat = document.getElementById("chat");
 const input = document.getElementById("q");
 
-function add(text, cls){
+function addMessage(text, cls){
   const d = document.createElement("div");
   d.className = "msg " + cls;
-  d.innerText = text;
+  d.textContent = text;
   chat.appendChild(d);
   chat.scrollTop = chat.scrollHeight;
 }
 
-async function send(){
-  const text = input.value.trim();
+/* ================= SEND ================= */
+
+async function send(initialText=null){
+  const text = initialText ?? input.value.trim();
   if(!text) return;
 
-  add(text, "user");
-  input.value = "";
+  if(!initialText){
+    addMessage(text, "user");
+    input.value="";
+  }
 
   const loading = document.createElement("div");
-  loading.className = "msg bot";
-  loading.innerText = "Thinking...";
+  loading.className="msg bot";
+  loading.textContent="Thinking...";
   chat.appendChild(loading);
 
   try{
     const r = await fetch("/ask",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({question:text})
+      body: JSON.stringify({
+        question: text,
+        session_id: SESSION_ID
+      })
     });
 
     const j = await r.json();
     loading.remove();
-
-    // 🔹 TUR LİSTESİ (BACKEND'DEN BİREBİR)
-    if (j.tours && j.tours.length > 0) {
-      let tourText = "Available Tours:\n";
-      j.tours.forEach((t, i) => {
-        tourText += `${i + 1}. ${t}\n`;
-      });
-      add(tourText.trim(), "bot");
-    }
-
-    // 🔹 LLM AÇIKLAMASI
-    if (j.answer) {
-      add(j.answer, "bot");
-    }
+    addMessage(j.answer || "No response","bot");
 
   }catch(e){
     loading.remove();
-    add("Server error", "bot");
+    addMessage("Server error","bot");
   }
 }
 
-input.addEventListener("keydown", e => {
-  if(e.key === "Enter") send();
-});
-</script>
+/* ================= ENTER KEY ================= */
 
+input.addEventListener("keydown",e=>{
+  if(e.key==="Enter") send();
+});
+
+/* ================= AUTO START ================= */
+
+// Sayfa açılır açılmaz botu başlat
+send("hi");
+
+</script>
 </body>
 </html>
