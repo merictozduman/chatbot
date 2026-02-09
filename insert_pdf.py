@@ -9,7 +9,7 @@ import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # ---------------- CONFIG ----------------
-PDF_ROOT = r"C:\Users\damndamn\Desktop\tours"
+PDF_ROOT = r"C:\Users\damndamn\Desktop\tours\fez"
 
 DB_CONN = {
     "dbname": "vektordb",
