@@ -305,34 +305,39 @@ def parse_period_location(user_text: str):
 # ---------------- SUITABLE TOURS DB SEARCH (rag_detail_search) ----------------
 def search_suitable_tours(period_yyyymm: str, location: str):
     """
-    Uses rag_detail_search:
-      - period_yyyymm exact match (expects 'YYYY-MM')
-      - location partial match (ILIKE) with btrim to avoid hidden spaces
+    DÜZELTİLMİŞ VERSİYON:
+    - period_yyyymm -> LIKE '%YYYYMM%'
+    - location -> lower + translate + LIKE
     """
+
     conn = psycopg.connect(**DB_CONN)
     cur = conn.cursor()
 
-    # Debug (terminal)
-    print("\n[SUITABLE] INPUT -> period_yyyymm:", period_yyyymm, " | location:", location)
+    # Normalize kullanıcı girdisi
+    loc_norm = normalize_text(location)
+
+    print("\n[SUITABLE] INPUT -> period_yyyymm:", period_yyyymm, " | location:", loc_norm)
 
     cur.execute("""
         SELECT DISTINCT source_name
         FROM rag_detail_search
-        WHERE period_yyyymm = %s
-          AND btrim(location) ILIKE %s
+        WHERE 
+            translate(lower(period_yyyymm),'öüçşğı','oucsgi') LIKE %s
+        AND 
+            translate(lower(btrim(location)),'öüçşğı','oucsgi') LIKE %s
         ORDER BY source_name
-    """, (period_yyyymm, f"%{location.strip()}%"))
+    """, (f"%{period_yyyymm.replace('-', '')}%", f"%{loc_norm}%"))
 
     tours = [r[0] for r in cur.fetchall()]
     cur.close()
     conn.close()
 
-    # Debug (terminal)
     print("[SUITABLE] FOUND TOURS:", len(tours))
     for t in tours[:50]:
         print(" -", t)
 
     return tours
+
 
 # ---------------- API ----------------
 @app.post("/ask")
@@ -356,7 +361,8 @@ def ask(q: Question):
                 "- existing tour\n"
                 "- suitable tours\n"
                 "- general information\n\n"
-                "Note: Please refresh the page when switching between modes to ensure a smooth experience."
+                "Note: Please refresh the page when switching between modes to ensure a smooth experience.                              "
+                "   "
             )
         }
 
@@ -460,3 +466,4 @@ Content:
         "session_id": session_id,
         "answer": "Something went wrong. Please refresh and try again."
     }
+ 
